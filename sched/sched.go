@@ -146,11 +146,13 @@ func (s *Scheduler) handleTask(workerID int, taskID string) {
 	s.mu.RLock()
 	task, exists := s.tasks[taskID]
 	if !exists {
+		s.mu.RUnlock()
 		return
 	}
 
 	handler, exists := s.handlers[task.Name]
 	if !exists {
+		s.mu.RUnlock()
 		return
 	}
 	s.mu.RUnlock()
