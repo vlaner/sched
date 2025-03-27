@@ -2,6 +2,14 @@ package sched
 
 import "time"
 
+type TaskStatus string
+
+var (
+	PENDING     TaskStatus = "pending"
+	RUNNING     TaskStatus = "running"
+	RESCHEDULED TaskStatus = "rescheduled"
+)
+
 type Task struct {
 	ID   string
 	Name string
@@ -19,6 +27,8 @@ type Task struct {
 	Recurring bool
 
 	Payload any
+
+	Status TaskStatus
 }
 
 type TaskOpt func(*Task)
@@ -42,6 +52,7 @@ func NewTask(name string, payload any, opts ...TaskOpt) Task {
 		Name:      name,
 		Payload:   payload,
 		CreatedAt: time.Now().UTC(),
+		Status:    PENDING,
 	}
 
 	for _, o := range opts {
@@ -51,7 +62,7 @@ func NewTask(name string, payload any, opts ...TaskOpt) Task {
 	return t
 }
 
-func (t *Task) copy() Task {
+func (t *Task) copy() *Task {
 	now := time.Now().UTC()
 	task := Task{
 		ID:         generateID(),
@@ -61,11 +72,12 @@ func (t *Task) copy() Task {
 		Interval:   t.Interval,
 		Recurring:  t.Recurring,
 		Payload:    t.Payload,
+		Status:     PENDING,
 	}
 
 	if task.Recurring {
 		task.NextRunAt = now.Add(task.Interval)
 	}
 
-	return task
+	return &task
 }
