@@ -107,10 +107,6 @@ func (s *Scheduler) AddTask(task Task) error {
 		return errors.New("handler does not exist")
 	}
 
-	if task.NextRunAt.IsZero() {
-		task.NextRunAt = time.Now().UTC()
-	}
-
 	s.tasks[task.ID] = &task
 
 	s.signalSchedule()
@@ -234,15 +230,11 @@ func (s *Scheduler) handleTask(ctx context.Context, workerID int, task *Task) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	task.EndedAt = &now
+	task.End(now)
 
 	if err != nil {
 		if task.MaxRetries > 0 && task.Retries < task.MaxRetries {
-			task.Retries++
-			task.NextRunAt = backoff(now, task.Retries)
-			task.StartedAt = nil
-			task.EndedAt = nil
-			task.Status = RESCHEDULED
+			task.Reschedule()
 			s.tasks[task.ID] = task
 			return
 		} else {
@@ -261,15 +253,4 @@ func (s *Scheduler) handleTask(ctx context.Context, workerID int, task *Task) {
 
 func generateID() string {
 	return rand.Text()
-}
-
-var maxBackoff = 5 * time.Second
-
-func backoff(initial time.Time, attempt int) time.Time {
-	delay := 300 * time.Millisecond * (1 << uint(attempt))
-	if delay > maxBackoff {
-		delay = maxBackoff
-	}
-
-	return initial.Add(delay)
 }

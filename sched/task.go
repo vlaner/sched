@@ -2,12 +2,15 @@ package sched
 
 import "time"
 
+var maxBackoff = 5 * time.Second
+
 type TaskStatus string
 
 var (
 	PENDING     TaskStatus = "pending"
 	RUNNING     TaskStatus = "running"
 	RESCHEDULED TaskStatus = "rescheduled"
+	FINISHED    TaskStatus = "finished"
 )
 
 type Task struct {
@@ -62,6 +65,19 @@ func NewTask(name string, payload any, opts ...TaskOpt) Task {
 	return t
 }
 
+func (t *Task) Reschedule() {
+	t.Retries++
+	t.NextRunAt = backoff(time.Now().UTC(), t.Retries)
+	t.StartedAt = nil
+	t.EndedAt = nil
+	t.Status = RESCHEDULED
+}
+
+func (t *Task) End(at time.Time) {
+	t.EndedAt = &at
+	t.Status = FINISHED
+}
+
 func (t *Task) copy() *Task {
 	now := time.Now().UTC()
 	task := Task{
@@ -80,4 +96,13 @@ func (t *Task) copy() *Task {
 	}
 
 	return &task
+}
+
+func backoff(initial time.Time, attempt int) time.Time {
+	delay := 300 * time.Millisecond * (1 << uint(attempt))
+	if delay > maxBackoff {
+		delay = maxBackoff
+	}
+
+	return initial.Add(delay)
 }
