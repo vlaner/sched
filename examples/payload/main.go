@@ -39,6 +39,12 @@ func main() {
 	scheduler.AddTask(sched.NewTask("error", nil, sched.WithRetry(5)))
 	scheduler.AddTask(sched.NewTask("singleerr", nil))
 
+	scheduler.AddTask(
+		sched.NewTask("add", AddPayload{100, 100},
+			sched.WithID("custom-id"),
+			sched.WithNextRunAt(time.Now().Add(10*time.Second))),
+	)
+
 	exit := make(chan os.Signal, 1)
 	signal.Notify(exit, os.Interrupt, syscall.SIGTERM)
 	<-exit

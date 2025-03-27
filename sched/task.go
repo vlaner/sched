@@ -49,9 +49,20 @@ func WithRecurring(interval time.Duration) TaskOpt {
 	}
 }
 
+func WithNextRunAt(at time.Time) TaskOpt {
+	return func(task *Task) {
+		task.NextRunAt = at
+	}
+}
+
+func WithID(id string) TaskOpt {
+	return func(task *Task) {
+		task.ID = id
+	}
+}
+
 func NewTask(name string, payload any, opts ...TaskOpt) Task {
 	t := Task{
-		ID:        generateID(),
 		Name:      name,
 		Payload:   payload,
 		CreatedAt: time.Now().UTC(),
@@ -60,6 +71,10 @@ func NewTask(name string, payload any, opts ...TaskOpt) Task {
 
 	for _, o := range opts {
 		o(&t)
+	}
+
+	if t.ID == "" {
+		t.ID = generateID()
 	}
 
 	return t
