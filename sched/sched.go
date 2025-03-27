@@ -247,7 +247,6 @@ func (s *Scheduler) handleTask(ctx context.Context, workerID int, task *Task) {
 			return
 		} else {
 			s.errorHandler(task, fmt.Errorf("max retries reached: %w", err))
-			delete(s.tasks, task.ID)
 		}
 	}
 
