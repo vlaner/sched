@@ -17,8 +17,7 @@ type Scheduler struct {
 	handlers map[string]HandlerFunc
 	mu       sync.RWMutex
 
-	done chan struct{}
-	wg   sync.WaitGroup
+	wg sync.WaitGroup
 
 	tasks  map[string]*Task
 	taskCh chan *Task
@@ -26,6 +25,9 @@ type Scheduler struct {
 	errorHandler func(task *Task, err error)
 
 	scheduleSignal chan struct{}
+
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 func defaultErrorHandler(task *Task, err error) {
@@ -35,15 +37,17 @@ func defaultErrorHandler(task *Task, err error) {
 type HandlerFunc func(context.Context, any) error
 
 func NewScheduler(workers int) *Scheduler {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &Scheduler{
 		handlers:       make(map[string]HandlerFunc),
 		workers:        workers,
 		wg:             sync.WaitGroup{},
-		done:           make(chan struct{}),
 		tasks:          make(map[string]*Task),
 		taskCh:         make(chan *Task, 1),
 		errorHandler:   defaultErrorHandler,
 		scheduleSignal: make(chan struct{}, 1),
+		ctx:            ctx,
+		cancel:         cancel,
 	}
 }
 
@@ -58,14 +62,14 @@ func (s *Scheduler) Start() {
 		s.wg.Add(1)
 		go func(workerID int) {
 			defer s.wg.Done()
-			s.worker(workerID)
+			s.worker(s.ctx, workerID)
 		}(i)
 	}
 
 }
 
 func (s *Scheduler) Stop(ctx context.Context) error {
-	close(s.done)
+	s.cancel()
 
 	wait := make(chan struct{})
 	go func() {
@@ -156,7 +160,7 @@ func (s *Scheduler) scheduleLoop() {
 		timer.Reset(waitDuration)
 
 		select {
-		case <-s.done:
+		case <-s.ctx.Done():
 			return
 		// block loop until signal comes
 		case <-s.scheduleSignal:
@@ -192,20 +196,20 @@ func (s *Scheduler) scheduleLoop() {
 	}
 }
 
-func (s *Scheduler) worker(id int) {
+func (s *Scheduler) worker(ctx context.Context, id int) {
 	for {
 		select {
-		case <-s.done:
+		case <-ctx.Done():
 			return
 		case task := <-s.taskCh:
-			s.handleTask(id, task)
+			s.handleTask(ctx, id, task)
 			s.signalSchedule()
 		}
 	}
 }
 
 // TODO: improve synchronization
-func (s *Scheduler) handleTask(workerID int, task *Task) {
+func (s *Scheduler) handleTask(ctx context.Context, workerID int, task *Task) {
 	s.mu.RLock()
 	task, exists := s.tasks[task.ID]
 	s.mu.RUnlock()
@@ -221,7 +225,10 @@ func (s *Scheduler) handleTask(workerID int, task *Task) {
 		return
 	}
 
-	err := handler(context.Background(), task.Payload)
+	handleCtx, handleCancel := context.WithCancel(ctx)
+	defer handleCancel()
+
+	err := handler(handleCtx, task.Payload)
 	now := time.Now().UTC()
 
 	s.mu.Lock()
