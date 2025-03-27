@@ -249,14 +249,15 @@ func (s *Scheduler) handleTask(ctx context.Context, workerID int, task *Task) {
 			s.errorHandler(task, fmt.Errorf("max retries reached: %w", err))
 			delete(s.tasks, task.ID)
 		}
-	} else {
-		delete(s.tasks, task.ID)
-
-		if task.Recurring {
-			newTask := task.copy()
-			s.tasks[newTask.ID] = newTask
-		}
 	}
+
+	delete(s.tasks, task.ID)
+
+	if task.Recurring {
+		newTask := task.copy()
+		s.tasks[newTask.ID] = newTask
+	}
+
 }
 
 func generateID() string {
