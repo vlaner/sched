@@ -110,30 +110,3 @@ func (m *MemoryStore) Update(ctx context.Context, taskID string, updateFn func(*
 	}
 	return nil
 }
-
-func (m *MemoryStore) End(ctx context.Context, taskID string, at time.Time) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	task, exists := m.tasks[taskID]
-	if !exists {
-		return ErrTaskNotFound
-	}
-
-	task.End(at)
-
-	return nil
-}
-func (m *MemoryStore) Reschedule(ctx context.Context, taskID string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	task, exists := m.tasks[taskID]
-	if !exists {
-		return ErrTaskNotFound
-	}
-
-	task.Reschedule()
-
-	return nil
-}
