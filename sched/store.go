@@ -17,7 +17,6 @@ type TaskStore interface {
 
 	Pending(ctx context.Context, now time.Time) ([]*Task, error)
 	EarliestRun(ctx context.Context) (time.Time, bool)
-	MarkStatus(ctx context.Context, status TaskStatus, ids ...string) error
 }
 
 type MemoryStore struct {
@@ -95,32 +94,6 @@ func (m *MemoryStore) Pending(ctx context.Context, now time.Time) ([]*Task, erro
 	m.mu.Unlock()
 
 	return tasksToRun, nil
-}
-
-func (m *MemoryStore) MarkStatus(ctx context.Context, status TaskStatus, ids ...string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	now := time.Now().UTC()
-
-	for _, id := range ids {
-		task, exists := m.tasks[id]
-		if !exists {
-			continue
-		}
-		task.Status = status
-
-		switch status {
-		case RUNNING:
-			task.StartedAt = &now
-		case FINISHED:
-			task.EndedAt = &now
-		case PENDING:
-			task.StartedAt = nil
-			task.EndedAt = nil
-		}
-	}
-
-	return nil
 }
 
 func (m *MemoryStore) Update(ctx context.Context, taskID string, updateFn func(*Task) error) error {
