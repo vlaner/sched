@@ -240,7 +240,14 @@ func (s *Scheduler) handleTask(ctx context.Context, workerID int, t *Task) {
 		return
 	}
 
-	handleCtx, handleCancel := context.WithCancel(ctx)
+	var handleCtx context.Context
+	var handleCancel context.CancelFunc
+	if task.Timeout > 0 {
+		handleCtx, handleCancel = context.WithTimeout(ctx, task.Timeout)
+	} else {
+		handleCtx, handleCancel = context.WithCancel(ctx)
+	}
+
 	defer handleCancel()
 
 	err = handler(handleCtx, task.Payload)
@@ -264,8 +271,10 @@ func (s *Scheduler) handleTask(ctx context.Context, workerID int, t *Task) {
 				s.errorHandler(task, fmt.Errorf("retry task update: %w", err))
 			}
 			return
-		} else {
+		} else if task.MaxRetries > 0 && task.Retries == task.MaxRetries {
 			s.errorHandler(task, fmt.Errorf("max retries reached: %w", err))
+		} else {
+			s.errorHandler(task, err)
 		}
 	}
 

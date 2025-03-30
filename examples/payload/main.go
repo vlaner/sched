@@ -35,9 +35,20 @@ func main() {
 		return errors.New("always erro single no retry")
 	})
 
+	scheduler.Register("longrun", func(ctx context.Context, payload any) error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		return nil
+	})
+
 	scheduler.AddTask(sched.NewTask("add", AddPayload{1, 2}, sched.WithRecurring(1*time.Second)))
 	scheduler.AddTask(sched.NewTask("error", nil, sched.WithRetry(5)))
 	scheduler.AddTask(sched.NewTask("singleerr", nil))
+	scheduler.AddTask(sched.NewTask("longrun", nil, sched.WithTimeout(5*time.Millisecond)))
 
 	scheduler.AddTask(
 		sched.NewTask("add", AddPayload{100, 100},

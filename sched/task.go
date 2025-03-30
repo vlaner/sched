@@ -31,6 +31,8 @@ type Task struct {
 
 	Payload any
 
+	Timeout time.Duration
+
 	Status TaskStatus
 }
 
@@ -58,6 +60,14 @@ func WithNextRunAt(at time.Time) TaskOpt {
 func WithID(id string) TaskOpt {
 	return func(task *Task) {
 		task.ID = id
+	}
+}
+
+func WithTimeout(timeout time.Duration) TaskOpt {
+	return func(task *Task) {
+		if timeout > 0 {
+			task.Timeout = timeout
+		}
 	}
 }
 
