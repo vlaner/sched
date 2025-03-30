@@ -17,6 +17,9 @@ type Scheduler struct {
 	handlers map[string]HandlerFunc
 	mu       sync.RWMutex
 
+	runningTasks map[string]context.CancelFunc
+	runningMu    sync.Mutex
+
 	wg sync.WaitGroup
 
 	tasks  map[string]*Task
@@ -50,6 +53,7 @@ func NewScheduler(workers int, opts ...SchedulerOpt) *Scheduler {
 	ctx, cancel := context.WithCancel(context.Background())
 	s := Scheduler{
 		handlers:       make(map[string]HandlerFunc),
+		runningTasks:   make(map[string]context.CancelFunc),
 		workers:        workers,
 		wg:             sync.WaitGroup{},
 		tasks:          make(map[string]*Task),
@@ -135,6 +139,20 @@ func (s *Scheduler) AddTask(task Task) error {
 	}
 
 	s.signalSchedule()
+
+	return nil
+}
+
+func (s *Scheduler) CancelTask(taskID string) error {
+	s.runningMu.Lock()
+	defer s.runningMu.Unlock()
+
+	cancel, exists := s.runningTasks[taskID]
+	if !exists {
+		return errors.New("cancel task not found")
+	}
+
+	cancel()
 
 	return nil
 }
@@ -247,13 +265,33 @@ func (s *Scheduler) handleTask(ctx context.Context, workerID int, t *Task) {
 	} else {
 		handleCtx, handleCancel = context.WithCancel(ctx)
 	}
-
 	defer handleCancel()
+
+	s.runningMu.Lock()
+	s.runningTasks[task.ID] = handleCancel
+	s.runningMu.Unlock()
+
+	defer func() {
+		s.runningMu.Lock()
+		delete(s.runningTasks, task.ID)
+		s.runningMu.Unlock()
+	}()
 
 	err = handler(handleCtx, task.Payload)
 	now := time.Now().UTC()
 
+	taskCancelled := errors.Is(err, context.Canceled)
+	taskDeadline := errors.Is(err, context.DeadlineExceeded)
+
 	updErr := s.store.Update(s.ctx, task.ID, func(t *Task) error {
+		if taskCancelled {
+			task.Cancel(now)
+			return nil
+		} else if taskDeadline {
+			task.Overdue(now)
+			return nil
+		}
+
 		t.End(now)
 		return nil
 	})

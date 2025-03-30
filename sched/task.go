@@ -11,6 +11,8 @@ var (
 	RUNNING     TaskStatus = "running"
 	RESCHEDULED TaskStatus = "rescheduled"
 	FINISHED    TaskStatus = "finished"
+	CANCELLED   TaskStatus = "cancelled"
+	TIMEOUT     TaskStatus = "timeout"
 )
 
 type Task struct {
@@ -101,6 +103,16 @@ func (t *Task) Reschedule() {
 func (t *Task) End(at time.Time) {
 	t.EndedAt = &at
 	t.Status = FINISHED
+}
+
+func (t *Task) Cancel(at time.Time) {
+	t.EndedAt = &at
+	t.Status = CANCELLED
+}
+
+func (t *Task) Overdue(at time.Time) {
+	t.EndedAt = &at
+	t.Status = TIMEOUT
 }
 
 func (t *Task) copy() *Task {
