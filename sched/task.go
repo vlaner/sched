@@ -126,6 +126,7 @@ func (t *Task) copy() *Task {
 		Recurring:  t.Recurring,
 		Payload:    t.Payload,
 		Status:     PENDING,
+		Timeout:    t.Timeout,
 	}
 
 	if task.Recurring {
