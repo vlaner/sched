@@ -15,8 +15,9 @@ type TaskStore interface {
 	Delete(ctx context.Context, ID string) error
 	Update(ctx context.Context, taskID string, updateFn func(*Task) error) error
 
-	Pending(ctx context.Context, now time.Time) ([]*Task, error)
 	EarliestRun(ctx context.Context) (time.Time, bool)
+	PendingIDs(ctx context.Context, now time.Time) ([]string, error)
+	Claim(ctx context.Context, now time.Time, ids ...string) ([]*Task, error)
 }
 
 type MemoryStore struct {
@@ -82,18 +83,34 @@ func (m *MemoryStore) EarliestRun(ctx context.Context) (time.Time, bool) {
 	return earliestNextRun, hasTasks
 }
 
-func (m *MemoryStore) Pending(ctx context.Context, now time.Time) ([]*Task, error) {
-	var tasksToRun []*Task
+func (m *MemoryStore) PendingIDs(ctx context.Context, now time.Time) ([]string, error) {
+	var pendingIds []string
 
 	m.mu.Lock()
 	for _, task := range m.tasks {
 		if now.After(task.NextRunAt) && (task.Status == PENDING || task.Status == RESCHEDULED) {
-			tasksToRun = append(tasksToRun, task)
+			pendingIds = append(pendingIds, task.ID)
 		}
 	}
 	m.mu.Unlock()
 
-	return tasksToRun, nil
+	return pendingIds, nil
+}
+
+func (m *MemoryStore) Claim(ctx context.Context, now time.Time, ids ...string) ([]*Task, error) {
+	var claimed []*Task
+
+	m.mu.Lock()
+	for _, task := range m.tasks {
+		if now.After(task.NextRunAt) && (task.Status == PENDING || task.Status == RESCHEDULED) {
+			task.Status = RUNNING
+			task.StartedAt = &now
+			claimed = append(claimed, task)
+		}
+	}
+	m.mu.Unlock()
+
+	return claimed, nil
 }
 
 func (m *MemoryStore) Update(ctx context.Context, taskID string, updateFn func(*Task) error) error {

@@ -192,28 +192,21 @@ func (s *Scheduler) scheduleLoop() {
 		case now := <-timer.C:
 			now = now.UTC()
 
-			tasksToRun, err := s.store.Pending(s.ctx, now)
+			pendingIds, err := s.store.PendingIDs(s.ctx, now)
 			if err != nil {
 				log.Println("get pending tasks: ", err)
 				continue
 			}
 
-			for _, task := range tasksToRun {
-				updErr := s.store.Update(s.ctx, task.ID, func(t *Task) error {
-					task.Status = RUNNING
-					task.StartedAt = &now
-					return nil
-				})
-				if updErr != nil {
-					s.errorHandler(task, fmt.Errorf("scheduled task update: %w", err))
-					// TODO: revert task state?
-				}
+			now = time.Now().UTC()
+			tasksToRun, err := s.store.Claim(s.ctx, now, pendingIds...)
 
+			for _, task := range tasksToRun {
 				select {
 				case s.taskCh <- task:
 				default:
 					log.Println("could not send task to process", task)
-					updErr = s.store.Update(s.ctx, task.ID, func(t *Task) error {
+					updErr := s.store.Update(s.ctx, task.ID, func(t *Task) error {
 						task.Status = PENDING
 						task.StartedAt = nil
 						return nil
@@ -265,49 +258,42 @@ func (s *Scheduler) handleTask(ctx context.Context, workerID int, t *Task) {
 	} else {
 		handleCtx, handleCancel = context.WithCancel(ctx)
 	}
-	defer handleCancel()
 
 	s.runningMu.Lock()
 	s.runningTasks[task.ID] = handleCancel
 	s.runningMu.Unlock()
 
-	defer func() {
-		s.runningMu.Lock()
-		delete(s.runningTasks, task.ID)
-		s.runningMu.Unlock()
-	}()
-
 	err = handler(handleCtx, task.Payload)
+	handleCancel()
+
+	s.runningMu.Lock()
+	delete(s.runningTasks, task.ID)
+	s.runningMu.Unlock()
+
 	now := time.Now().UTC()
 
-	taskCancelled := errors.Is(err, context.Canceled)
-	taskDeadline := errors.Is(err, context.DeadlineExceeded)
-
-	updErr := s.store.Update(s.ctx, task.ID, func(t *Task) error {
-		if taskCancelled {
-			task.Cancel(now)
-			return nil
-		} else if taskDeadline {
-			task.Overdue(now)
-			return nil
-		}
-
-		t.End(now)
-		return nil
-	})
-	if updErr != nil {
-		s.errorHandler(task, fmt.Errorf("task update: %w", err))
-	}
-
 	if err != nil {
-		if task.MaxRetries > 0 && task.Retries < task.MaxRetries {
-			updErr := s.store.Update(s.ctx, task.ID, func(t *Task) error {
+		taskCancelled := errors.Is(err, context.Canceled)
+		taskDeadline := errors.Is(err, context.DeadlineExceeded)
+		updErr := s.store.Update(s.ctx, task.ID, func(t *Task) error {
+			if taskCancelled {
+				task.Cancel(now)
+				return nil
+			} else if taskDeadline {
+				task.Overdue(now)
+				return nil
+			} else if task.MaxRetries > 0 && task.Retries < task.MaxRetries {
 				t.Reschedule()
 				return nil
-			})
-			if updErr != nil {
-				s.errorHandler(task, fmt.Errorf("retry task update: %w", err))
 			}
+
+			t.End(now)
+			return nil
+		})
+		if updErr != nil {
+			s.errorHandler(task, fmt.Errorf("task update: %w", err))
+		}
+		if task.Status == RESCHEDULED {
 			return
 		} else if task.MaxRetries > 0 && task.Retries == task.MaxRetries {
 			s.errorHandler(task, fmt.Errorf("max retries reached: %w", err))
